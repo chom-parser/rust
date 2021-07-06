@@ -98,10 +98,7 @@ use super::Generate;
 
 impl<T: Ids> Generate<T> for ty::Ref {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
-		let ty = context.ty(*self).unwrap();
-		let module_path = super::path(context.module_path(ty.module()).unwrap());
-		let id = super::type_id(context, ty.id());
-		quote! { #module_path::#id }
+		super::path(context, context.type_path(*self).unwrap())
 	}
 }
 

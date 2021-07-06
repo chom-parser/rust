@@ -20,8 +20,38 @@ pub trait GenerateIn<T: Ids> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream;
 }
 
-fn path<T: Ids>(path: chom_ir::module::Path<'_, T>) -> TokenStream {
-	panic!("TODO")
+fn path<T: Ids>(context: &Context<T>, path: chom_ir::Path<'_, T>) -> TokenStream {
+	let mut tokens = TokenStream::new();
+
+	for segment in path {
+		use chom_ir::path::Segment;
+
+		if !tokens.is_empty() {
+			tokens.extend(quote! { :: })
+		}
+
+		let id = match segment {
+			Segment::Module(id) => module_id(context, id),
+			Segment::Type(id) => type_id(context, id),
+			Segment::Function(sig) => function_id(context, sig)
+		};
+
+		tokens.extend(id)
+	}
+
+	tokens
+}
+
+fn module_id<T: Ids>(context: &Context<T>, id: &chom_ir::module::Id<T>) -> TokenStream {
+	use chom_ir::module::Id;
+	match id {
+		Id::Root => quote! { crate },
+		Id::Named(id) => {
+			let ident = context.id().module_ident(*id);
+			let id = quote::format_ident!("{}", ident.to_snake_case());
+			quote! { #id }
+		}
+	}
 }
 
 fn type_id<T: Ids>(context: &Context<T>, id: chom_ir::ty::Id<T>) -> TokenStream {
@@ -70,6 +100,28 @@ fn variant_id<T: Ids>(context: &Context<T>, v: &chom_ir::ty::Variant<T>) -> Toke
 			quote! { #id }
 		}
 	}
+}
+
+fn function_id<T: Ids>(context: &Context<T>, sig: &chom_ir::function::Signature) -> TokenStream {
+	use chom_ir::function::Signature;
+	match sig {
+		Signature::ExternParser(ident) => {
+			let id = quote::format_ident!("{}", ident.to_caml_case());
+			quote! { #id }
+		},
+		Signature::Lexer(_) => {
+			quote! { next_token }
+		},
+		Signature::Parser(_, return_ty) => {
+			let ident = type_instance_ident(context, &return_ty);
+			let id = quote::format_ident!("parse_{}", ident.to_caml_case());
+			quote! { #id }
+		}
+	}
+}
+
+fn type_instance_ident<T: Ids>(context: &Context<T>, i: &chom_ir::ty::Instance) -> chom_ir::Ident {
+	panic!("TODO")
 }
 
 fn var_id<T: Ids>(context: &Context<T>, id: T::Var) -> TokenStream {

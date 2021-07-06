@@ -157,7 +157,7 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 						quote! { #lexer.peek_char()? }
 					},
 					Expr::Parse(f_index) => {
-						let f_path = super::path(context.function_path(*f_index).unwrap());
+						let f_path = super::path(context, context.function_path(*f_index).unwrap());
 						quote! { #f_path ( #lexer.buffer.as_str() ) }
 					},
 					Expr::Chars => {
@@ -314,7 +314,7 @@ impl<T: Ids> GenerateIn<T> for expr::Error<T> {
 		match self {
 			Self::UnexpectedChar(expr) => {
 				let expr = expr.generate_in(context, scope.pure());
-				let extern_module_path = super::path(context.extern_module_path());
+				let extern_module_path = super::path(context, context.extern_module_path());
 				quote! { #extern_module_path::unexpected(#expr) }
 			}
 			Self::UnexpectedToken(expr) => {
