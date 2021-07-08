@@ -24,7 +24,6 @@ impl<T: Ids> Generate<T> for Pattern<T> {
 				let ty = context.ty(*ty_ref).unwrap();
 				let variant = ty.as_enum().unwrap().variant(*v).unwrap();
 				let variant_id = super::variant_id(context, variant);
-				let ty_path = ty_ref.generate(context);
 				let args = if args.is_empty() {
 					None
 				} else {
@@ -44,7 +43,13 @@ impl<T: Ids> Generate<T> for Pattern<T> {
 						}
 					})
 				};
-				quote! { #ty_path :: #variant_id #args }
+
+				if super::is_ubiquitous(*ty_ref) {
+					quote! { #variant_id #args }
+				} else {
+					let ty_path = ty_ref.generate(context);
+					quote! { #ty_path :: #variant_id #args }
+				}
 			}
 			Self::Or(patterns) => {
 				let patterns = patterns.iter().map(|p| p.generate(context));

@@ -74,7 +74,8 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 					Desc::TupleStruct(_) => {
 						let n = proc_macro2::Literal::u32_unsuffixed(*i);
 						quote! { #value . #n }
-					}
+					},
+					Desc::Lexer => panic!("cannot get field from lexer type")
 				}
 			}
 			Self::Let(v, is_mutable, value, next) => {
@@ -93,6 +94,16 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 					#next
 				}
 			}
+			Self::Update(v, value, next) => {
+				let id = super::var_id(context, *v);
+				let value = value.generate_in(context, scope.pure());
+				let next = next.generate_in(context, scope);
+
+				quote! {
+					#id = #value;
+					#next
+				}
+			}
 			Self::New(ty, args) => {
 				let ty = ty.generate(context);
 				let args = args.generate_in(context, scope.pure());
@@ -102,9 +113,14 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 				let ty = context.ty(*ty_ref).unwrap();
 				let variant = ty.as_enum().unwrap().variant(*v).unwrap();
 				let variant_id = super::variant_id(context, variant);
-				let ty_path = ty_ref.generate(context);
 				let args = args.generate_in(context, scope.pure());
-				quote! { #ty_path :: #variant_id #args }
+
+				if super::is_ubiquitous(*ty_ref) {
+					quote! { #variant_id #args }
+				} else {
+					let ty_path = ty_ref.generate(context);
+					quote! { #ty_path :: #variant_id #args }
+				}
 			}
 			Self::Error(err) => err.generate_in(context, scope.pure()),
 			Self::Heap(expr) => {
@@ -131,6 +147,11 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 						unreachable!()
 					}
  				}
+			}
+			Self::Call(index, args) => {
+				let path = super::path(context, context.function_path(*index).unwrap());
+				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
+				quote! { #path ( #(#args),* ) }
 			}
 			Self::TailRecursion { body, label, .. } => {
 				let body = body.generate_in(context, scope.impure(*label));
@@ -163,6 +184,9 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 					Expr::Chars => {
 						quote! { #lexer.buffer.chars() }
 					},
+					Expr::Span => {
+						quote! { #lexer.span }
+					}
 					Expr::Clear(next) => {
 						let next = next.generate_in(context, scope);
 						quote! { self.clear(); #next }
@@ -312,11 +336,6 @@ impl<T: Ids> GenerateIn<T> for expr::Error<T> {
 		scope: Scope<T>
 	) -> TokenStream {
 		match self {
-			Self::UnexpectedChar(expr) => {
-				let expr = expr.generate_in(context, scope.pure());
-				let extern_module_path = super::path(context, context.extern_module_path());
-				quote! { #extern_module_path::unexpected(#expr) }
-			}
 			Self::UnexpectedToken(expr) => {
 				let expr = expr.generate_in(context, scope.pure());
 				quote! { Error::UnexpectedToken(#expr) }

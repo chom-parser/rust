@@ -1,38 +1,35 @@
-impl Generate<pseudo::module::Id> for Rust {
-	fn generate(&self, _: &pseudo::Context, id: &pseudo::module::Id) -> TokenStream {
-		self.module_id(id)
-	}
-}
+use proc_macro2::TokenStream;
+use quote::quote;
+use chom_ir::{
+	Context,
+	Ids,
+	Module
+};
+use super::{
+	Generate,
+	GenerateIn,
+	Scope
+};
 
-impl Generate<pseudo::Module> for Rust {
-	fn generate(&self, context: &pseudo::Context, module: &pseudo::Module) -> TokenStream {
-		use pseudo::module::Role;
-		use pseudo::Routine;
+impl<T: Ids> Generate<T> for Module<T> {
+	fn generate(&self, context: &Context<T>) -> TokenStream {
+		let scope = Scope::new(self.index().unwrap());
 
-		let scope = Scope::new(module.index());
-
-		let roles = module.roles().map(|r| match r {
-			Role::Lexer => self.generate_lexer_definition(),
-			Role::ParserRoot => self.generate_parser_definition(context),
-			_ => TokenStream::new(),
-		});
-
-		let types = module.types().map(|t| {
+		let types = self.types().map(|t| {
 			let ty = context.ty(t).unwrap();
-			self.generate(context, ty)
+			ty.generate_in(context, scope)
 		});
 
-		let routines = module.routines().map(|r| match r {
-			Routine::Lexer(expr) => self.generate_lexer_impl(context, scope, expr),
-			Routine::Parser(index, parser) => self.generate_parser(context, scope, *index, parser),
-			Routine::Format(r, expr) => self.generate_debug_formatter(context, scope, *r, expr),
+		let functions = self.functions().map(|index| {
+			let f = context.function(index).unwrap();
+			f.generate_in(context, scope)
 		});
 
-		let submodules = module.modules().map(|index| {
+		let submodules = self.modules().map(|index| {
 			let m = context.module(index).unwrap();
 			if !m.is_extern() {
-				let id = self.generate(context, m.id());
-				let inner = self.generate(context, m);
+				let id =  super::module_id(context, m.id());
+				let inner = m.generate(context);
 				Some(quote! {
 					mod #id {
 						#inner
@@ -44,9 +41,8 @@ impl Generate<pseudo::Module> for Rust {
 		});
 
 		quote! {
-			#(#roles)*
 			#(#types)*
-			#(#routines)*
+			#(#functions)*
 			#(#submodules)*
 		}
 	}
