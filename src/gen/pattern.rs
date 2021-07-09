@@ -3,7 +3,6 @@ use quote::quote;
 use chom_ir::{
 	Context,
 	Ids,
-	pattern,
 	Pattern
 };
 use super::Generate;
@@ -27,20 +26,21 @@ impl<T: Ids> Generate<T> for Pattern<T> {
 				let args = if args.is_empty() {
 					None
 				} else {
-					use pattern::ConsArgs;
-					Some(match args {
-						ConsArgs::Tuple(args) => {
+					Some(match ty.desc() {
+						chom_ir::ty::Desc::TupleStruct(_) => {
 							let args = args.iter().map(|a| a.generate(context));
 							quote! { ( #(#args),* ) }
-						}
-						ConsArgs::Struct(bindings) => {
-							let bindings = bindings.iter().map(|b| {
+						},
+						chom_ir::ty::Desc::Struct(strct) => {
+							assert_eq!(strct.len(), args.len());
+							let bindings = strct.fields().iter().enumerate().map(|(i, b)| {
 								let id = super::field_id(context, b.id);
-								let pattern = b.pattern.generate(context);
+								let pattern = args[i].generate(context);
 								quote! { #id as #pattern }
 							});
 							quote! { { #(#bindings),* } }
-						}
+						},
+						_ => panic!("not a structure")
 					})
 				};
 

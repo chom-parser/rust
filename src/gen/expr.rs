@@ -12,32 +12,32 @@ use super::{
 	Scope
 };
 
-impl<T: Ids> GenerateIn<T> for expr::BuildArgs<T> {
-	fn generate_in(
-		&self,
-		context: &Context<T>,
-		scope: Scope<T>
-	) -> TokenStream {
-		match self {
-			Self::Tuple(args) => {
-				if args.is_empty() {
-					TokenStream::new()
-				} else {
-					let args = args.iter().map(|a| a.generate_in(context, scope));
-					quote! { ( #(#args),* ) }
-				}
-			}
-			Self::Struct(bindings) => {
-				let bindings = bindings.iter().map(|b| {
-					let field = super::field_id(context, b.id);
-					let expr = b.expr.generate_in(context, scope);
-					quote! { #field: #expr }
-				});
-				quote! { { #(#bindings),* } }
-			}
-		}
-	}
-}
+// impl<T: Ids> GenerateIn<T> for expr::BuildArgs<T> {
+// 	fn generate_in(
+// 		&self,
+// 		context: &Context<T>,
+// 		scope: Scope<T>
+// 	) -> TokenStream {
+// 		match self {
+// 			Self::Tuple(args) => {
+// 				if args.is_empty() {
+// 					TokenStream::new()
+// 				} else {
+// 					let args = args.iter().map(|a| a.generate_in(context, scope));
+// 					quote! { ( #(#args),* ) }
+// 				}
+// 			}
+// 			Self::Struct(bindings) => {
+// 				let bindings = bindings.iter().map(|b| {
+// 					let field = super::field_id(context, b.id);
+// 					let expr = b.expr.generate_in(context, scope);
+// 					quote! { #field: #expr }
+// 				});
+// 				quote! { { #(#bindings),* } }
+// 			}
+// 		}
+// 	}
+// }
 
 impl<T: Ids> GenerateIn<T> for Box<Expr<T>> {
 	fn generate_in(
@@ -58,8 +58,9 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 		let expr = match &self {
 			Self::Literal(c) => c.generate(context),
 			Self::Get(x) => x.generate(context),
-			Self::GetField(value, ty_ref, i) => {
-				let value = value.generate_in(context, scope.pure());
+			Self::GetField(x, ty_ref, i) => {
+				// let value = value.generate_in(context, scope.pure());
+				let x = super::var_id(context, *x);
 				let ty = context.ty(*ty_ref).unwrap();
 				use chom_ir::ty::Desc;
 				match ty.desc() {
@@ -69,11 +70,11 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 						let f = strct.fields().get(*i as usize).expect("no such field");
 						let id = context.id().field_ident(f.id);
 						let field = quote::format_ident!("{}", id.to_snake_case());
-						quote! { #value . #field }
+						quote! { #x . #field }
 					},
 					Desc::TupleStruct(_) => {
 						let n = proc_macro2::Literal::u32_unsuffixed(*i);
-						quote! { #value . #n }
+						quote! { #x . #n }
 					},
 					Desc::Lexer => panic!("cannot get field from lexer type")
 				}
@@ -106,14 +107,14 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 			}
 			Self::New(ty, args) => {
 				let ty = ty.generate(context);
-				let args = args.generate_in(context, scope.pure());
+				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
 				quote! { #ty #args }
 			}
 			Self::Cons(ty_ref, v, args) => {
 				let ty = context.ty(*ty_ref).unwrap();
 				let variant = ty.as_enum().unwrap().variant(*v).unwrap();
 				let variant_id = super::variant_id(context, variant);
-				let args = args.generate_in(context, scope.pure());
+				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
 
 				if super::is_ubiquitous(*ty_ref) {
 					quote! { #variant_id #args }
