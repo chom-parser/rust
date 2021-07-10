@@ -5,7 +5,7 @@ use std::path::{
 
 pub mod gen;
 
-pub fn module_filename<P: AsRef<Path>, T: chom_ir::Ids>(namepsace: &T, root: P, module_path: chom_ir::Path<T>) -> PathBuf {
+pub fn module_filename<P: AsRef<Path>, T: chom_ir::Namespace>(namepsace: &T, root: P, module_path: chom_ir::Path<T>) -> PathBuf {
 	let mut file_path = root.as_ref().to_path_buf();
 
 	for segment in module_path {
@@ -24,7 +24,7 @@ pub fn module_filename<P: AsRef<Path>, T: chom_ir::Ids>(namepsace: &T, root: P, 
 	file_path
 }
 
-pub fn generate_module<T: chom_ir::Ids>(context: &chom_ir::Context<T>, module: &chom_ir::Module<T>) -> proc_macro2::TokenStream {
+pub fn generate_module<T: chom_ir::Namespace>(context: &chom_ir::Context<T>, module: &chom_ir::Module<T>) -> proc_macro2::TokenStream {
 	use gen::Generate;
 	module.generate(context)
 }

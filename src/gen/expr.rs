@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
-	Ids,
+	Namespace,
 	Expr,
 	expr,
 	Context
@@ -12,34 +12,7 @@ use super::{
 	Scope
 };
 
-// impl<T: Ids> GenerateIn<T> for expr::BuildArgs<T> {
-// 	fn generate_in(
-// 		&self,
-// 		context: &Context<T>,
-// 		scope: Scope<T>
-// 	) -> TokenStream {
-// 		match self {
-// 			Self::Tuple(args) => {
-// 				if args.is_empty() {
-// 					TokenStream::new()
-// 				} else {
-// 					let args = args.iter().map(|a| a.generate_in(context, scope));
-// 					quote! { ( #(#args),* ) }
-// 				}
-// 			}
-// 			Self::Struct(bindings) => {
-// 				let bindings = bindings.iter().map(|b| {
-// 					let field = super::field_id(context, b.id);
-// 					let expr = b.expr.generate_in(context, scope);
-// 					quote! { #field: #expr }
-// 				});
-// 				quote! { { #(#bindings),* } }
-// 			}
-// 		}
-// 	}
-// }
-
-impl<T: Ids> GenerateIn<T> for Box<Expr<T>> {
+impl<T: Namespace> GenerateIn<T> for Box<Expr<T>> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -49,7 +22,7 @@ impl<T: Ids> GenerateIn<T> for Box<Expr<T>> {
 	}
 }
 
-impl<T: Ids> GenerateIn<T> for Expr<T> {
+impl<T: Namespace> GenerateIn<T> for Expr<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -149,10 +122,21 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 					}
  				}
 			}
-			Self::Call(index, args) => {
-				let path = super::path(context, context.function_path(*index).unwrap());
+			Self::Call(index, object, args) => {
 				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
-				quote! { #path ( #(#args),* ) }
+
+				match object {
+					Some((object, _)) => {
+						let f = context.function(*index).unwrap();
+						let id = super::function_id(context, f.signature());
+						let object = super::var_id(context, *object);
+						quote! { #object . #id ( #(#args),* ) }
+					},
+					None => {
+						let path = super::path(context, context.function_path(*index).unwrap());
+						quote! { #path ( #(#args),* ) }
+					}
+				}
 			}
 			Self::TailRecursion { body, label, .. } => {
 				let body = body.generate_in(context, scope.impure(*label));
@@ -177,10 +161,6 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 				match expr {
 					Expr::Peek => {
 						quote! { #lexer.peek_char()? }
-					},
-					Expr::Parse(f_index) => {
-						let f_path = super::path(context, context.function_path(*f_index).unwrap());
-						quote! { #f_path ( #lexer.buffer.as_str() ) }
 					},
 					Expr::Chars => {
 						quote! { #lexer.buffer.chars() }
@@ -292,20 +272,10 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 					}
 				}
 			}
-			Self::Write(name, args) => {
-				let args_exprs = args.iter().map(|a| a.generate_in(context, scope.pure()));
-				let mut format_string = name.clone();
-				if !args.is_empty() {
-					format_string.push('(');
-					for i in 0..args.len() {
-						if i > 0 {
-							format_string.push_str(", ");
-						}
-						format_string.push_str("{:?}")
-					}
-					format_string.push(')');
-				}
-				quote! { write!(f, #format_string, #(#args_exprs),*) }
+			Self::Write(output, string, next) => {
+				let output = output.generate(context);
+				let next = next.generate_in(context, scope);
+				quote! { write!(#output, #string); #next }
 			}
 			Self::Unreachable => quote! { unreachable!() }
 		};
@@ -318,7 +288,7 @@ impl<T: Ids> GenerateIn<T> for Expr<T> {
 	}
 }
 
-impl<T: Ids> GenerateIn<T> for expr::MatchCase<T> {
+impl<T: Namespace> GenerateIn<T> for expr::MatchCase<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -330,7 +300,7 @@ impl<T: Ids> GenerateIn<T> for expr::MatchCase<T> {
 	}
 }
 
-impl<T: Ids> GenerateIn<T> for expr::Error<T> {
+impl<T: Namespace> GenerateIn<T> for expr::Error<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -349,7 +319,7 @@ impl<T: Ids> GenerateIn<T> for expr::Error<T> {
 	}
 }
 
-impl<T: Ids> Generate<T> for expr::Var<T> {
+impl<T: Namespace> Generate<T> for expr::Var<T> {
 	fn generate(
 		&self,
 		context: &Context<T>

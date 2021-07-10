@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
 	Context,
-	Ids,
+	Namespace,
 	Function,
 	function
 };
@@ -12,7 +12,7 @@ use super::{
 	Scope
 };
 
-impl<T: Ids> GenerateIn<T> for Function<T> {
+impl<T: Namespace> GenerateIn<T> for Function<T> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream {
 		let body = match self.body() {
 			Some(expr) => expr.generate_in(context, scope),
@@ -21,8 +21,8 @@ impl<T: Ids> GenerateIn<T> for Function<T> {
 		use function::Signature;
 		let id = super::function_id(context, self.signature());
 		match self.signature() {
-			Signature::ExternParser(_) => TokenStream::new(), // TODO generate a dummy function.
-			Signature::UndefinedChar(error_type) => {
+			Signature::ExternParser(_, _) => TokenStream::new(), // TODO generate a dummy function.
+			Signature::UndefinedChar(_, error_type) => {
 				let error_type = error_type.generate(context);
 				quote! { pub fn #id (c: Option<char>) -> #error_type { #body } }
 			}
@@ -97,7 +97,8 @@ impl<T: Ids> GenerateIn<T> for Function<T> {
 					}
 				}
 			},
-			Signature::Parser(token_type, result_type) => {
+			Signature::Parser(lexer, token_type, result_type) => {
+				let lexer = super::var_id(context, *lexer);
 				let token_type_path = token_type.generate(context);
 				let result_type_path = result_type.generate(context);
 
@@ -110,7 +111,7 @@ impl<T: Ids> GenerateIn<T> for Function<T> {
 							>,
 						>,
 					>(
-						lexer: &mut L,
+						#lexer: &mut L,
 					) -> ::std::result::Result<::source_span::Loc<#result_type_path>, ::source_span::Loc<Error>> {
 						#body
 					}

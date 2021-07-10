@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
-	Ids,
+	Namespace,
 	Constant,
 	Context
 };
@@ -9,7 +9,7 @@ use super::{
 	Generate
 };
 
-impl<T: Ids> Generate<T> for Constant {
+impl<T: Namespace> Generate<T> for Constant {
 	fn generate(&self, _: &Context<T>) -> TokenStream {
 		match self {
 			Constant::Int(n) => quote! { #n },

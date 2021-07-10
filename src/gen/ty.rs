@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
 	Context,
-	Ids,
+	Namespace,
 	Type,
 	ty
 };
@@ -12,7 +12,7 @@ use super::{
 	Scope
 };
 
-impl<T: Ids> Generate<T> for ty::Param<T> {
+impl<T: Namespace> Generate<T> for ty::Param<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		match self {
 			Self::Defined(id) => super::param_id(context, *id),
@@ -27,7 +27,7 @@ impl<T: Ids> Generate<T> for ty::Param<T> {
 	}
 }
 
-impl<T: Ids> GenerateIn<T> for Type<T> {
+impl<T: Namespace> GenerateIn<T> for Type<T> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream {
 		use ty::Desc;
 		let id = super::type_id(context, self.id());
@@ -93,7 +93,7 @@ impl<T: Ids> GenerateIn<T> for Type<T> {
 	}
 }
 
-impl<T: Ids> Generate<T> for ty::Variant<T> {
+impl<T: Namespace> Generate<T> for ty::Variant<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		let id = super::variant_id(context, self);
 		match self {
@@ -129,19 +129,19 @@ impl<T: Ids> Generate<T> for ty::Variant<T> {
 	}
 }
 
-impl<T: Ids> Generate<T> for ty::Ref {
+impl<T: Namespace> Generate<T> for ty::Ref {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		super::path(context, context.type_path(*self).unwrap())
 	}
 }
 
-impl<T: Ids> Generate<T> for Box<ty::Expr<T>> {
+impl<T: Namespace> Generate<T> for Box<ty::Expr<T>> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		self.as_ref().generate(context)
 	}
 }
 
-impl<T: Ids> Generate<T> for ty::Expr<T> {
+impl<T: Namespace> Generate<T> for ty::Expr<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		match self {
 			Self::Var(p) => p.generate(context),

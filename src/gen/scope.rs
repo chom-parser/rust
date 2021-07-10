@@ -1,6 +1,6 @@
-use chom_ir::Ids;
+use chom_ir::Namespace;
 
-pub struct Scope<T: Ids> {
+pub struct Scope<T: Namespace> {
 	/// Current module.
 	module: u32,
 
@@ -12,7 +12,7 @@ pub struct Scope<T: Ids> {
 	pure: bool,
 }
 
-impl<T: Ids> Clone for Scope<T> {
+impl<T: Namespace> Clone for Scope<T> {
 	fn clone(&self) -> Self {
 		Self {
 			module: self.module,
@@ -22,9 +22,9 @@ impl<T: Ids> Clone for Scope<T> {
 	} 
 }
 
-impl<T: Ids> Copy for Scope<T> {}
+impl<T: Namespace> Copy for Scope<T> {}
 
-impl<T: Ids> Scope<T> {
+impl<T: Namespace> Scope<T> {
 	pub fn new(module: u32) -> Self {
 		Self {
 			module,

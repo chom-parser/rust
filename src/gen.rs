@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use chom_ir::{Ids, Context};
+use chom_ir::{Namespace, Context};
 
 mod scope;
 mod constant;
@@ -13,16 +13,16 @@ mod module;
 pub use scope::Scope;
 
 /// Generate code inside a scope.
-pub trait Generate<T: Ids> {
+pub trait Generate<T: Namespace> {
 	fn generate(&self, context: &Context<T>) -> TokenStream;
 }
 
 /// Generate code inside a scope.
-pub trait GenerateIn<T: Ids> {
+pub trait GenerateIn<T: Namespace> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream;
 }
 
-fn path<T: Ids>(context: &Context<T>, path: chom_ir::Path<'_, T>) -> TokenStream {
+fn path<T: Namespace>(context: &Context<T>, path: chom_ir::Path<'_, T>) -> TokenStream {
 	let mut tokens = TokenStream::new();
 
 	for segment in path {
@@ -44,7 +44,7 @@ fn path<T: Ids>(context: &Context<T>, path: chom_ir::Path<'_, T>) -> TokenStream
 	tokens
 }
 
-fn module_id<T: Ids>(context: &Context<T>, id: &chom_ir::module::Id<T>) -> TokenStream {
+fn module_id<T: Namespace>(context: &Context<T>, id: &chom_ir::module::Id<T>) -> TokenStream {
 	use chom_ir::module::Id;
 	match id {
 		Id::Root => quote! { crate },
@@ -56,7 +56,7 @@ fn module_id<T: Ids>(context: &Context<T>, id: &chom_ir::module::Id<T>) -> Token
 	}
 }
 
-fn type_id<T: Ids>(context: &Context<T>, id: chom_ir::ty::Id<T>) -> TokenStream {
+fn type_id<T: Namespace>(context: &Context<T>, id: chom_ir::ty::Id<T>) -> TokenStream {
 	match id {
 		chom_ir::ty::Id::Native(n) => {
 			use chom_ir::ty::Native;
@@ -89,19 +89,19 @@ fn is_ubiquitous(r: chom_ir::ty::Ref) -> bool {
 	}
 }
 
-fn param_id<T: Ids>(context: &Context<T>, id: T::Param) -> TokenStream {
+fn param_id<T: Namespace>(context: &Context<T>, id: T::Param) -> TokenStream {
 	let ident = context.id().param_ident(id);
 	let id = quote::format_ident!("{}", ident.to_caml_case());
 	quote! { #id }
 }
 
-fn field_id<T: Ids>(context: &Context<T>, id: T::Field) -> TokenStream {
+fn field_id<T: Namespace>(context: &Context<T>, id: T::Field) -> TokenStream {
 	let ident = context.id().field_ident(id);
 	let id = quote::format_ident!("{}", ident.to_snake_case());
 	quote! { #id }
 }
 
-fn variant_id<T: Ids>(context: &Context<T>, v: &chom_ir::ty::Variant<T>) -> TokenStream {
+fn variant_id<T: Namespace>(context: &Context<T>, v: &chom_ir::ty::Variant<T>) -> TokenStream {
 	use chom_ir::ty::Variant;
 	match v {
 		Variant::Native(n) => {
@@ -121,20 +121,20 @@ fn variant_id<T: Ids>(context: &Context<T>, v: &chom_ir::ty::Variant<T>) -> Toke
 	}
 }
 
-fn function_id<T: Ids>(context: &Context<T>, sig: &chom_ir::function::Signature<T>) -> TokenStream {
+fn function_id<T: Namespace>(context: &Context<T>, sig: &chom_ir::function::Signature<T>) -> TokenStream {
 	use chom_ir::function::Signature;
 	match sig {
-		Signature::ExternParser(ident) => {
+		Signature::ExternParser(_, ident) => {
 			let id = quote::format_ident!("{}", ident.to_caml_case());
 			quote! { #id }
 		},
-		Signature::UndefinedChar(_) => {
+		Signature::UndefinedChar(_, _) => {
 			quote! { undefined }
 		},
 		Signature::Lexer(_, _) => {
 			quote! { next_token }
 		},
-		Signature::Parser(_, return_ty) => {
+		Signature::Parser(_, _, return_ty) => {
 			let ident = type_expr_ident(context, return_ty);
 			let id = quote::format_ident!("parse_{}", ident.to_snake_case());
 			quote! { #id }
@@ -142,7 +142,7 @@ fn function_id<T: Ids>(context: &Context<T>, sig: &chom_ir::function::Signature<
 	}
 }
 
-fn type_expr_ident<T: Ids>(context: &Context<T>, e: &chom_ir::ty::Expr<T>) -> chom_ir::Ident {
+fn type_expr_ident<T: Namespace>(context: &Context<T>, e: &chom_ir::ty::Expr<T>) -> chom_ir::Ident {
 	use chom_ir::ty::Expr;
 	match e {
 		Expr::Var(_) => panic!("type parameter cannot occur here"),
@@ -164,13 +164,13 @@ fn type_expr_ident<T: Ids>(context: &Context<T>, e: &chom_ir::ty::Expr<T>) -> ch
 	}
 }
 
-fn var_id<T: Ids>(context: &Context<T>, id: T::Var) -> TokenStream {
+fn var_id<T: Namespace>(context: &Context<T>, id: T::Var) -> TokenStream {
 	let ident = context.id().var_ident(id);
 	let id = quote::format_ident!("{}", ident.to_snake_case());
 	quote! { #id }
 }
 
-fn label_id<T: Ids>(context: &Context<T>, id: T::Label) -> TokenStream {
+fn label_id<T: Namespace>(context: &Context<T>, id: T::Label) -> TokenStream {
 	let ident = context.id().label_ident(id);
 	let lft = syn::Lifetime::new(&format!("'{}", ident.to_snake_case()), proc_macro2::Span::call_site());
 	quote! { #lft }

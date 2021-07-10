@@ -2,18 +2,18 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
 	Context,
-	Ids,
+	Namespace,
 	Pattern
 };
 use super::Generate;
 
-impl<T: Ids> Generate<T> for Box<Pattern<T>> {
+impl<T: Namespace> Generate<T> for Box<Pattern<T>> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		self.as_ref().generate(context)
 	}
 }
 
-impl<T: Ids> Generate<T> for Pattern<T> {
+impl<T: Namespace> Generate<T> for Pattern<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		match self {
 			Self::Any => quote! { _ },

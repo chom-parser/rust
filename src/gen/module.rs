@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use chom_ir::{
 	Context,
-	Ids,
+	Namespace,
 	Module
 };
 use super::{
@@ -11,7 +11,7 @@ use super::{
 	Scope
 };
 
-impl<T: Ids> Generate<T> for Module<T> {
+impl<T: Namespace> Generate<T> for Module<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		let scope = Scope::new(self.index().unwrap());
 
