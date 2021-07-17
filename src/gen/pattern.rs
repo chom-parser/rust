@@ -7,13 +7,13 @@ use chom_ir::{
 };
 use super::Generate;
 
-impl<T: Namespace + ?Sized> Generate<T> for Box<Pattern<T>> {
+impl<T: Namespace> Generate<T> for Box<Pattern<T>> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		self.as_ref().generate(context)
 	}
 }
 
-impl<T: Namespace + ?Sized> Generate<T> for Pattern<T> {
+impl<T: Namespace> Generate<T> for Pattern<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		match self {
 			Self::Any => quote! { _ },
@@ -32,7 +32,7 @@ impl<T: Namespace + ?Sized> Generate<T> for Pattern<T> {
 							quote! { ( #(#args),* ) }
 						},
 						chom_ir::ty::Desc::Struct(strct) => {
-							assert_eq!(strct.len(), args.len());
+							assert_eq!(strct.len(), args.len() as u32);
 							let bindings = strct.fields().iter().enumerate().map(|(i, b)| {
 								let id = super::field_id(context, b.id);
 								let pattern = args[i].generate(context);

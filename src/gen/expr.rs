@@ -12,7 +12,7 @@ use super::{
 	Scope
 };
 
-impl<T: Namespace + ?Sized> GenerateIn<T> for Box<Expr<T>> {
+impl<T: Namespace> GenerateIn<T> for Box<Expr<T>> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -22,7 +22,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Box<Expr<T>> {
 	}
 }
 
-impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
+impl<T: Namespace> GenerateIn<T> for Expr<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -30,7 +30,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 	) -> TokenStream {
 		let expr = match &self {
 			Self::Literal(c) => c.generate(context),
-			Self::Get(x) => x.generate(context),
+			Self::Get(x) => super::var_id(context, *x),
 			Self::GetField(x, ty_ref, i) => {
 				// let value = value.generate_in(context, scope.pure());
 				let x = super::var_id(context, *x);
@@ -51,6 +51,14 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 					},
 					Desc::Lexer => panic!("cannot get field from lexer type")
 				}
+			}
+			Self::Ref(x) => {
+				let id = super::var_id(context, *x);
+				quote! { &#id }
+			}
+			Self::RefField(x, index) => {
+				let id = super::var_id(context, *x);
+				panic!("TODO ref field")
 			}
 			Self::Let(v, is_mutable, value, next) => {
 				let id = super::var_id(context, *v);
@@ -78,30 +86,67 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 					#next
 				}
 			}
+			Self::Check(x, value, next) => {
+				let id = super::var_id(context, *x);
+				let value = value.generate_in(context, scope.pure());
+				let next = next.generate_in(context, scope);
+
+				quote! {
+					let #id = #value?;
+					#next
+				}
+			}
 			Self::New(ty, args) => {
 				let ty = ty.generate(context);
-				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
-				quote! { #ty #args }
+				if args.is_empty() {
+					quote! { #ty }
+				} else {
+					let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
+					quote! { #ty (#(#args),*) }
+				}
 			}
 			Self::Cons(ty_ref, v, args) => {
 				let ty = context.ty(*ty_ref).unwrap();
 				let variant = ty.as_enum().unwrap().variant(*v).unwrap();
 				let variant_id = super::variant_id(context, variant);
-				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
 
-				if super::is_ubiquitous(*ty_ref) {
-					quote! { #variant_id #args }
+				let mut tokens = if super::is_ubiquitous(*ty_ref) {
+					quote! { #variant_id }
 				} else {
 					let ty_path = ty_ref.generate(context);
-					quote! { #ty_path :: #variant_id #args }
+					quote! { #ty_path :: #variant_id }
+				};
+				
+				if !args.is_empty() {
+					let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
+					tokens.extend(quote! { (#(#args),*) })
 				}
+
+				tokens
 			}
 			Self::Error(err) => err.generate_in(context, scope.pure()),
 			Self::Heap(expr) => {
 				let expr = expr.generate_in(context, scope.pure());
 				quote! { Box::new(#expr) }
 			}
+			Self::If(condition, then_branch, else_branch) => {
+				let condition = condition.generate_in(context, scope.pure());
+				let then_branch = then_branch.generate_in(context, scope);
+				let else_branch = else_branch.generate_in(context, scope);
+				quote! {
+					if #condition { #then_branch } else { #else_branch }
+				}
+			}
 			Self::Match { expr, cases } => {
+				let expr = expr.generate_in(context, scope.pure());
+				let cases = cases.iter().map(|c| c.generate_in(context, scope));
+				quote! {
+					match #expr {
+						#(#cases)*
+					}
+				}
+			}
+			Self::MatchRef { expr, cases } => {
 				let expr = expr.generate_in(context, scope.pure());
 				let cases = cases.iter().map(|c| c.generate_in(context, scope));
 				quote! {
@@ -122,21 +167,27 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 					}
  				}
 			}
-			Self::Call(index, object, args) => {
+			Self::Call(index, args) => {
 				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
 
-				match object {
-					Some((object, _)) => {
-						let f = context.function(*index).unwrap();
-						let id = super::function_id(context, f.signature());
-						let object = super::var_id(context, *object);
-						quote! { #object . #id ( #(#args),* ) }
-					},
-					None => {
-						let path = super::path(context, context.function_path(*index).unwrap());
-						quote! { #path ( #(#args),* ) }
-					}
-				}
+				// match object {
+				// 	Some((object, _)) => {
+				// 		let f = context.function(*index).unwrap();
+				// 		let id = super::function_id(context, f.signature());
+				// 		let object = super::var_id(context, *object);
+				// 		quote! { #object . #id ( #(#args),* ) }
+				// 	},
+				// 	None => {
+				// 		let path = super::path(context, context.function_path(*index).unwrap());
+				// 		quote! { #path ( #(#args),* ) }
+				// 	}
+				// }
+				
+				let path = super::path(context, context.function_path(*index).unwrap());
+				quote! { #path ( #(#args),* ) }
+			}
+			Self::Return(args) => {
+				args.last().unwrap().generate_in(context, scope)
 			}
 			Self::TailRecursion { body, label, .. } => {
 				let body = body.generate_in(context, scope.impure(*label));
@@ -156,12 +207,18 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Lexer(lexer, expr) => {
-				let lexer = lexer.generate(context);
+				let lexer = super::var_id(context, *lexer);
 				use expr::LexerExpr as Expr;
 				match expr {
+					Expr::IsEmpty => {
+						quote! { #lexer.is_empty() }
+					}
 					Expr::Peek => {
 						quote! { #lexer.peek_char()? }
 					},
+					Expr::Buffer => {
+						quote! { #lexer.buffer.as_str() }
+					}
 					Expr::Chars => {
 						quote! { #lexer.buffer.chars() }
 					},
@@ -179,7 +236,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 				}
 			},
 			Self::Stream(stream, expr) => {
-				let stream = stream.generate(context);
+				let stream = super::var_id(context, *stream);
 				use expr::StreamExpr as Expr;
 				match expr {
 					Expr::Pull(dst, next) => {
@@ -190,7 +247,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Stack(stack, expr) => {
-				let stack = stack.generate(context);
+				let stack = super::var_id(context, *stack);
 				use expr::StackExpr as Expr;
 				match expr {
 					Expr::Push(v, q, next) => {
@@ -273,9 +330,19 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Write(output, string, next) => {
-				let output = output.generate(context);
+				let output = super::var_id(context, *output);
 				let next = next.generate_in(context, scope);
 				quote! { write!(#output, #string); #next }
+			}
+			Self::Print(string, next) => {
+				let next = next.generate_in(context, scope);
+				quote! { eprintln!(#string); #next }
+			}
+			Self::DebugFormat(output, e, next) => {
+				let output = super::var_id(context, *output);
+				let value = e.generate_in(context, scope.pure());
+				let next = next.generate_in(context, scope);
+				quote! { write!(#output, "{:?}", #value)?; #next }
 			}
 			Self::Unreachable => quote! { unreachable!() }
 		};
@@ -288,7 +355,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 	}
 }
 
-impl<T: Namespace + ?Sized> GenerateIn<T> for expr::MatchCase<T> {
+impl<T: Namespace> GenerateIn<T> for expr::MatchCase<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -300,7 +367,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for expr::MatchCase<T> {
 	}
 }
 
-impl<T: Namespace + ?Sized> GenerateIn<T> for expr::Error<T> {
+impl<T: Namespace> GenerateIn<T> for expr::Error<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -315,18 +382,6 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for expr::Error<T> {
 				let expr = expr.generate_in(context, scope.pure());
 				quote! { Error::UnexpectedNode(#expr) }
 			}
-		}
-	}
-}
-
-impl<T: Namespace + ?Sized> Generate<T> for expr::Var<T> {
-	fn generate(
-		&self,
-		context: &Context<T>
-	) -> TokenStream {
-		match self {
-			Self::This => quote! { self },
-			Self::Defined(id) => super::var_id(context, *id)
 		}
 	}
 }

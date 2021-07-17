@@ -12,26 +12,34 @@ use super::{
 	Scope
 };
 
-impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
+impl<T: Namespace> GenerateIn<T> for Function<T> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream {
 		let body = match self.body() {
 			Some(expr) => expr.generate_in(context, scope),
 			None => quote! { unimplemented!() }
 		};
-		use function::Signature;
-		let id = super::function_id(context, self.signature());
-		match self.signature() {
-			Signature::ExternParser(_, _) => TokenStream::new(), // TODO generate a dummy function.
-			Signature::UndefinedChar(_, error_type) => {
-				let error_type = error_type.generate(context);
-				quote! { pub fn #id (c: Option<char>) -> #error_type { #body } }
+		let id = super::function_id(context, self.id(), self.signature());
+		match self.signature().marker() {
+			None => {
+				TokenStream::new() // TODO generate function.
 			}
-			Signature::Lexer(_, error_type) => {
-				let error_type = error_type.generate(context);
-				// let extern_module_path = super::path(context, context.extern_module_path());
+			Some(function::Marker::ExternParser) => {
+				TokenStream::new() // TODO generate a dummy function.
+			}
+			Some(function::Marker::UndefinedChar) => {
+				let return_ty = self.signature().return_types()[0].generate(context);
+				quote! { pub fn #id (c: Option<char>) -> #return_ty { #body } }
+			}
+			Some(function::Marker::Lexer) => {
+				let return_ty = &self.signature().return_types()[1];
+				let result_ty = return_ty.some_type().unwrap();
+				let (_token_ty, error_ty) = result_ty.as_result_type().unwrap();
+
+				let error_ty = error_ty.generate(context);
+
 				quote! {
 					impl<
-						E: Into<#error_type>,
+						E: Into<#error_ty>,
 						I: Iterator<Item = Result<char, E>>,
 						M: ::source_span::Metrics,
 					> Lexer<I, M> {
@@ -40,7 +48,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 							&mut self
 						) -> Result<
 							Option<char>,
-							::source_span::Loc<#error_type>,
+							::source_span::Loc<#error_ty>,
 						> {
 							match self.source.peek() {
 								Some(Ok(c)) => Ok(Some(*c)),
@@ -52,7 +60,7 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 						/// Consumes the next character.
 						fn consume_char(
 							&mut self,
-						) -> Result<(), ::source_span::Loc<#error_type>> {
+						) -> Result<(), ::source_span::Loc<#error_ty>> {
 							match self.source.next() {
 								Some(Ok(c)) => {
 									self.buffer.push(c);
@@ -75,20 +83,20 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 							&mut self,
 						) -> Result<
 							Option<::source_span::Loc<Token>>,
-							::source_span::Loc<#error_type>,
+							::source_span::Loc<#error_ty>,
 						> {
 							#body
 						}
 					}
 
 					impl<
-						E: Into<#error_type>,
+						E: Into<#error_ty>,
 						I: Iterator<Item = Result<char, E>>,
 						M: ::source_span::Metrics,
 					> Iterator for Lexer<I, M> {
 						type Item = Result<
 							::source_span::Loc<Token>,
-							::source_span::Loc<#error_type>,
+							::source_span::Loc<#error_ty>,
 						>;
 
 						fn next(&mut self) -> Option<Self::Item> {
@@ -96,11 +104,16 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 						}
 					}
 				}
-			},
-			Signature::Parser(lexer, token_type, result_type) => {
-				let lexer = super::var_id(context, *lexer);
-				let token_type_path = token_type.generate(context);
-				let result_type_path = result_type.generate(context);
+			}
+			Some(function::Marker::Parser) => {
+				let lexer = super::var_id(context, self.signature().arguments()[0].id());
+				let lexer_ty = self.signature().arguments()[0].ty();
+				let lexer_result_ty = lexer_ty.stream_item().unwrap();
+				let (token_ty, _error_ty) = lexer_result_ty.as_result_type().unwrap();
+				let return_ty = &self.signature().return_types()[0];
+
+				let token_type_path = token_ty.generate(context);
+				let result_type_path = return_ty.generate(context);
 
 				quote! {
 					pub fn #id<
@@ -116,6 +129,9 @@ impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 						#body
 					}
 				}
+			}
+			Some(function::Marker::DebugFormat) => {
+				panic!("TODO debug format")
 			}
 		}
 	}
