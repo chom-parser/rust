@@ -11,7 +11,7 @@ use super::{
 	Scope
 };
 
-impl<T: Namespace> Generate<T> for Module<T> {
+impl<T: Namespace + ?Sized> Generate<T> for Module<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		let scope = Scope::new(self.index().unwrap());
 

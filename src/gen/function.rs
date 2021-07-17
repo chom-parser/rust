@@ -12,7 +12,7 @@ use super::{
 	Scope
 };
 
-impl<T: Namespace> GenerateIn<T> for Function<T> {
+impl<T: Namespace + ?Sized> GenerateIn<T> for Function<T> {
 	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream {
 		let body = match self.body() {
 			Some(expr) => expr.generate_in(context, scope),

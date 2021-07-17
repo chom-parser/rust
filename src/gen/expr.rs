@@ -12,7 +12,7 @@ use super::{
 	Scope
 };
 
-impl<T: Namespace> GenerateIn<T> for Box<Expr<T>> {
+impl<T: Namespace + ?Sized> GenerateIn<T> for Box<Expr<T>> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -22,7 +22,7 @@ impl<T: Namespace> GenerateIn<T> for Box<Expr<T>> {
 	}
 }
 
-impl<T: Namespace> GenerateIn<T> for Expr<T> {
+impl<T: Namespace + ?Sized> GenerateIn<T> for Expr<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -288,7 +288,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 	}
 }
 
-impl<T: Namespace> GenerateIn<T> for expr::MatchCase<T> {
+impl<T: Namespace + ?Sized> GenerateIn<T> for expr::MatchCase<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -300,7 +300,7 @@ impl<T: Namespace> GenerateIn<T> for expr::MatchCase<T> {
 	}
 }
 
-impl<T: Namespace> GenerateIn<T> for expr::Error<T> {
+impl<T: Namespace + ?Sized> GenerateIn<T> for expr::Error<T> {
 	fn generate_in(
 		&self,
 		context: &Context<T>,
@@ -319,7 +319,7 @@ impl<T: Namespace> GenerateIn<T> for expr::Error<T> {
 	}
 }
 
-impl<T: Namespace> Generate<T> for expr::Var<T> {
+impl<T: Namespace + ?Sized> Generate<T> for expr::Var<T> {
 	fn generate(
 		&self,
 		context: &Context<T>

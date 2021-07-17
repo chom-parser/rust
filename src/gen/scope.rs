@@ -1,6 +1,6 @@
 use chom_ir::Namespace;
 
-pub struct Scope<T: Namespace> {
+pub struct Scope<T: Namespace + ?Sized> {
 	/// Current module.
 	module: u32,
 
@@ -12,7 +12,7 @@ pub struct Scope<T: Namespace> {
 	pure: bool,
 }
 
-impl<T: Namespace> Clone for Scope<T> {
+impl<T: Namespace + ?Sized> Clone for Scope<T> {
 	fn clone(&self) -> Self {
 		Self {
 			module: self.module,
@@ -22,9 +22,9 @@ impl<T: Namespace> Clone for Scope<T> {
 	} 
 }
 
-impl<T: Namespace> Copy for Scope<T> {}
+impl<T: Namespace + ?Sized> Copy for Scope<T> {}
 
-impl<T: Namespace> Scope<T> {
+impl<T: Namespace + ?Sized> Scope<T> {
 	pub fn new(module: u32) -> Self {
 		Self {
 			module,

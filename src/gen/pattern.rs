@@ -7,13 +7,13 @@ use chom_ir::{
 };
 use super::Generate;
 
-impl<T: Namespace> Generate<T> for Box<Pattern<T>> {
+impl<T: Namespace + ?Sized> Generate<T> for Box<Pattern<T>> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		self.as_ref().generate(context)
 	}
 }
 
-impl<T: Namespace> Generate<T> for Pattern<T> {
+impl<T: Namespace + ?Sized> Generate<T> for Pattern<T> {
 	fn generate(&self, context: &Context<T>) -> TokenStream {
 		match self {
 			Self::Any => quote! { _ },

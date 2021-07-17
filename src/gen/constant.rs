@@ -9,7 +9,7 @@ use super::{
 	Generate
 };
 
-impl<T: Namespace> Generate<T> for Constant {
+impl<T: Namespace + ?Sized> Generate<T> for Constant {
 	fn generate(&self, _: &Context<T>) -> TokenStream {
 		match self {
 			Constant::Int(n) => quote! { #n },
