@@ -12,6 +12,8 @@ use super::{
 	Scope
 };
 
+mod lexer;
+
 impl<T: Namespace> GenerateIn<T> for Function<T> {
 	fn generate_in(&self, context: &Context<T>, mut scope: Scope<T>) -> TokenStream {
 		scope.set_marker(self.signature().marker());
@@ -24,116 +26,50 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 		let id = super::function_id(context, self.id(), self.signature());
 		match self.signature().marker() {
 			None => {
-				TokenStream::new() // TODO generate function.
+				let args = self.signature().arguments().iter().map(|a| {
+					let id = super::var_id(context, Some(scope), a.id());
+					let ty = a.ty().generate(context);
+					quote! { #id: #ty }
+				});
+
+				let return_ty = self.signature().return_types()[0].generate(context);
+
+				quote! {
+					fn #id(#(#args),*) -> #return_ty {
+						#body
+					}
+				}
 			}
 			Some(function::Marker::ExternParser) => {
 				TokenStream::new() // TODO generate a dummy function.
 			}
-			Some(function::Marker::UndefinedChar) => {
+			Some(function::Marker::UnexpectedChar) => {
 				let return_ty = self.signature().return_types()[0].generate(context);
 				quote! { pub fn #id (c: Option<char>) -> #return_ty { #body } }
 			}
 			Some(function::Marker::Lexer) => {
-				let return_ty = &self.signature().return_types()[1];
-				let (token_opt_ty, error_ty) = return_ty.as_result_type().unwrap();
-
-				let token_opt_ty = token_opt_ty.generate(context);
-				let error_ty = error_ty.generate(context);
-
-				quote! {
-					impl<
-						E: Into<#error_ty>,
-						I: Iterator<Item = Result<char, E>>,
-						M: ::source_span::Metrics,
-					> Lexer<I, M> {
-						/// Checks if the buffer is empty.
-						fn is_empty(&self) -> bool {
-							self.buffer.is_empty()
-						}
-
-						/// Peeks the next character without consuming it.
-						fn peek_char(
-							&mut self
-						) -> Result<
-							Option<char>,
-							::source_span::Loc<#error_ty>,
-						> {
-							match self.source.peek() {
-								Some(Ok(c)) => Ok(Some(*c)),
-								Some(Err(_)) => Err(self.consume_char().unwrap_err()),
-								None => Ok(None),
-							}
-						}
-
-						/// Consumes the next character.
-						fn consume_char(
-							&mut self,
-						) -> Result<(), ::source_span::Loc<#error_ty>> {
-							match self.source.next() {
-								Some(Ok(c)) => {
-									self.buffer.push(c);
-									self.span.push(c, &self.metrics);
-									Ok(())
-								}
-								Some(Err(e)) => Err(::source_span::Loc::new(e.into(), self.span.end().into())),
-								None => Ok(()),
-							}
-						}
-
-						/// Clears the lexer buffer.
-						fn clear(&mut self) {
-							self.buffer.clear();
-							self.span.clear()
-						}
-
-						/// Parses the next token.
-						fn next_token(
-							&mut self,
-						) -> Result<
-							#token_opt_ty,
-							::source_span::Loc<#error_ty>,
-						> {
-							#body
-						}
-					}
-
-					impl<
-						E: Into<#error_ty>,
-						I: Iterator<Item = Result<char, E>>,
-						M: ::source_span::Metrics,
-					> Iterator for Lexer<I, M> {
-						type Item = Result<
-							::source_span::Loc<Token>,
-							::source_span::Loc<#error_ty>,
-						>;
-
-						fn next(&mut self) -> Option<Self::Item> {
-							self.next_token().transpose()
-						}
-					}
-				}
+				debug_assert!(scope.this().is_some());
+				lexer::generate(context, self, body)
 			}
 			Some(function::Marker::Parser) => {
 				let lexer = super::var_id(context, Some(scope), self.signature().arguments()[0].id());
 				let lexer_ty = self.signature().arguments()[0].ty();
-				let lexer_result_ty = lexer_ty.stream_item().unwrap();
-				let (token_ty, _error_ty) = lexer_result_ty.as_result_type().unwrap();
+				let lexer_item_ty = lexer_ty.stream_item().unwrap();
+				let (token_ty, lexer_error_ty) = lexer_item_ty.as_result_type().unwrap();
 				let return_ty = &self.signature().return_types()[0];
 
-				let token_type_path = token_ty.generate(context);
-				let result_type_path = return_ty.generate(context);
+				let lexer_item_ty = lexer_item_ty.generate(context);
+				let token_ty = token_ty.generate(context);
+				let return_ty = return_ty.generate(context);
 
 				quote! {
 					pub fn #id<
 						L: ::std::iter::Iterator<
-							Item = ::std::result::Result<
-								::source_span::Loc<#token_type_path>,
-								::source_span::Loc<Error>,
-							>,
+							Item = #lexer_item_ty,
 						>,
 					>(
 						#lexer: &mut L,
-					) -> ::std::result::Result<::source_span::Loc<#result_type_path>, ::source_span::Loc<Error>> {
+					) -> #return_ty {
 						#body
 					}
 				}

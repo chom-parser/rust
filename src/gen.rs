@@ -153,27 +153,27 @@ fn function_id<T: Namespace>(context: &Context<T>, id: T::Function, _sig: &chom_
 // 	}
 // }
 
-fn type_expr_ident<T: Namespace>(context: &Context<T>, e: &chom_ir::ty::Expr<T>) -> chom_ir::Ident {
-	use chom_ir::ty::Expr;
-	match e {
-		Expr::Var(_) => panic!("type parameter cannot occur here"),
-		Expr::Instance(ty_ref, args) => {
-			let ty = context.ty(*ty_ref).unwrap();
+// fn type_expr_ident<T: Namespace>(context: &Context<T>, e: &chom_ir::ty::Expr<T>) -> chom_ir::Ident {
+// 	use chom_ir::ty::Expr;
+// 	match e {
+// 		Expr::Var(_) => panic!("type parameter cannot occur here"),
+// 		Expr::Instance(ty_ref, args) => {
+// 			let ty = context.ty(*ty_ref).unwrap();
 
-			let mut id = match ty.id() {
-				chom_ir::ty::Id::Defined(id) => context.id().type_ident(id),
-				chom_ir::ty::Id::Native(_) => panic!("native type cannot occur here")
-			};
+// 			let mut id = match ty.id() {
+// 				chom_ir::ty::Id::Defined(id) => context.id().type_ident(id),
+// 				chom_ir::ty::Id::Native(_) => panic!("native type cannot occur here")
+// 			};
 
-			for a in args {
-				let a_id = type_expr_ident(context, a);
-				id.push_ident(&a_id);
-			}
+// 			for a in args {
+// 				let a_id = type_expr_ident(context, a);
+// 				id.push_ident(&a_id);
+// 			}
 
-			id
-		}
-	}
-}
+// 			id
+// 		}
+// 	}
+// }
 
 fn var_id<T: Namespace>(context: &Context<T>, scope: Option<Scope<T>>, id: T::Var) -> TokenStream {
 	if scope.map(|s| s.this() == Some(id)).unwrap_or(false) {

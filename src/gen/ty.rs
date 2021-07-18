@@ -59,20 +59,40 @@ impl<T: Namespace> GenerateIn<T> for Type<T> {
 				quote! { pub struct #id #params (#(pub #args),*); }
 			},
 			Desc::Lexer => {
-				quote! {
-					/// Lexer.
-					pub struct #id<I: Iterator, M> {
-						/// Source character stream.
-						source: ::std::iter::Peekable<I>,
+				let located = self.methods().iter().any(|f_index| {
+					let f = context.function(*f_index).unwrap();
+					f.signature().arguments().iter().any(|a| {
+						a.ty().is_loc()
+					})
+				});
 
-						/// Token buffer.
-						buffer: String,
-
-						/// Character metrics.
-						metrics: M,
-
-						/// Token span.
-						span: ::source_span::Span,
+				if located {
+					quote! {
+						/// Lexer.
+						pub struct #id<I: Iterator, M> {
+							/// Source character stream.
+							source: ::std::iter::Peekable<I>,
+	
+							/// Token buffer.
+							buffer: String,
+	
+							/// Character metrics.
+							metrics: M,
+	
+							/// Token span.
+							span: ::source_span::Span,
+						}
+					}
+				} else {
+					quote! {
+						/// Lexer.
+						pub struct #id<I: Iterator> {
+							/// Source character stream.
+							source: ::std::iter::Peekable<I>,
+	
+							/// Token buffer.
+							buffer: String
+						}
 					}
 				}
 			}

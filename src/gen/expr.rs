@@ -112,6 +112,23 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 					#next
 				}
 			}
+			Self::CheckMap(x, value, f_index, args, next) => {
+				let id = super::var_id(context, Some(scope), *x);
+				let value = value.generate_in(context, scope);
+				let next = next.generate_in(context, scope);
+
+				let args = args.iter().map(|a| a.generate_in(context, scope));
+				let f_path = super::path(context, context.function_path(*f_index).unwrap());
+
+				quote! {
+					let #id = #value.map_err(|e| #f_path(#(#args,)* e))?;
+					#next
+				}
+			}
+			Self::Transpose(e) => {
+				let e = e.generate_in(context, scope);
+				quote! { #e.transpose() }
+			}
 			Self::New(ty_ref, args) => {
 				let args = if args.is_empty() {
 					None
@@ -156,7 +173,6 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 
 				tokens
 			}
-			Self::Error(err) => err.generate_in(context, scope),
 			Self::Heap(expr) => {
 				let expr = expr.generate_in(context, scope);
 				quote! { Box::new(#expr) }
@@ -192,7 +208,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				let value = value.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 				quote! {
-					if let Some(#pattern) = #value {
+					if let #pattern = #value {
 						#next
 					} else {
 						unreachable!()
