@@ -27,16 +27,16 @@ impl<T: Namespace> Generate<T> for Module<T> {
 
 		let submodules = self.modules().map(|index| {
 			let m = context.module(index).unwrap();
-			if !m.is_extern() {
-				let id =  super::module_id(context, m.id());
+			let id =  super::module_id(context, m.id());
+			if m.is_extern() {
+				quote! { pub mod #id; }
+			} else {
 				let inner = m.generate(context);
-				Some(quote! {
-					mod #id {
+				quote! {
+					pub mod #id {
 						#inner
 					}
-				})
-			} else {
-				None
+				}
 			}
 		});
 

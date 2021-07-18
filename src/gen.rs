@@ -128,7 +128,7 @@ fn variant_id<T: Namespace>(context: &Context<T>, v: &chom_ir::ty::Variant<T>) -
 
 fn function_id<T: Namespace>(context: &Context<T>, id: T::Function, _sig: &chom_ir::function::Signature<T>) -> TokenStream {
 	let ident = context.id().function_ident(id);
-	let id = quote::format_ident!("{}", ident.to_caml_case());
+	let id = quote::format_ident!("{}", ident.to_snake_case());
 	quote! { #id }
 }
 
@@ -175,10 +175,14 @@ fn type_expr_ident<T: Namespace>(context: &Context<T>, e: &chom_ir::ty::Expr<T>)
 	}
 }
 
-fn var_id<T: Namespace>(context: &Context<T>, id: T::Var) -> TokenStream {
-	let ident = context.id().var_ident(id);
-	let id = quote::format_ident!("{}", ident.to_snake_case());
-	quote! { #id }
+fn var_id<T: Namespace>(context: &Context<T>, scope: Option<Scope<T>>, id: T::Var) -> TokenStream {
+	if scope.map(|s| s.this() == Some(id)).unwrap_or(false) {
+		quote! { self }
+	} else {
+		let ident = context.id().var_ident(id);
+		let id = quote::format_ident!("{}", ident.to_snake_case());
+		quote! { #id }
+	}
 }
 
 fn label_id<T: Namespace>(context: &Context<T>, id: T::Label) -> TokenStream {

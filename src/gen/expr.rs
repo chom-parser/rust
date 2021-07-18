@@ -28,12 +28,12 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 		context: &Context<T>,
 		scope: Scope<T>,
 	) -> TokenStream {
-		let expr = match &self {
+		match &self {
 			Self::Literal(c) => c.generate(context),
-			Self::Get(x) => super::var_id(context, *x),
+			Self::Get(x) => super::var_id(context, Some(scope), *x),
 			Self::GetField(x, ty_ref, i) => {
-				// let value = value.generate_in(context, scope.pure());
-				let x = super::var_id(context, *x);
+				// let value = value.generate_in(context, scope);
+				let x = super::var_id(context, Some(scope), *x);
 				let ty = context.ty(*ty_ref).unwrap();
 				use chom_ir::ty::Desc;
 				match ty.desc() {
@@ -53,16 +53,32 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Ref(x) => {
-				let id = super::var_id(context, *x);
+				let id = super::var_id(context, Some(scope), *x);
 				quote! { &#id }
 			}
-			Self::RefField(x, index) => {
-				let id = super::var_id(context, *x);
-				panic!("TODO ref field")
+			Self::RefField(x, ty_ref, i) => {
+				let x = super::var_id(context, Some(scope), *x);
+				let ty = context.ty(*ty_ref).unwrap();
+				use chom_ir::ty::Desc;
+				match ty.desc() {
+					Desc::Opaque => panic!("cannot get field from opaque type"),
+					Desc::Enum(_) => panic!("cannot get field from enum type"),
+					Desc::Struct(strct) => {
+						let f = strct.fields().get(*i as usize).expect("no such field");
+						let id = context.id().field_ident(f.id);
+						let field = quote::format_ident!("{}", id.to_snake_case());
+						quote! { &#x . #field }
+					},
+					Desc::TupleStruct(_) => {
+						let n = proc_macro2::Literal::u32_unsuffixed(*i);
+						quote! { &#x . #n }
+					},
+					Desc::Lexer => panic!("cannot get field from lexer type")
+				}
 			}
 			Self::Let(v, is_mutable, value, next) => {
-				let id = super::var_id(context, *v);
-				let value = value.generate_in(context, scope.pure());
+				let id = super::var_id(context, Some(scope), *v);
+				let value = value.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 
 				let mutable = if *is_mutable {
@@ -77,8 +93,8 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Update(v, value, next) => {
-				let id = super::var_id(context, *v);
-				let value = value.generate_in(context, scope.pure());
+				let id = super::var_id(context, Some(scope), *v);
+				let value = value.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 
 				quote! {
@@ -87,8 +103,8 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Check(x, value, next) => {
-				let id = super::var_id(context, *x);
-				let value = value.generate_in(context, scope.pure());
+				let id = super::var_id(context, Some(scope), *x);
+				let value = value.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 
 				quote! {
@@ -96,13 +112,29 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 					#next
 				}
 			}
-			Self::New(ty, args) => {
-				let ty = ty.generate(context);
-				if args.is_empty() {
-					quote! { #ty }
+			Self::New(ty_ref, args) => {
+				let args = if args.is_empty() {
+					None
 				} else {
-					let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
-					quote! { #ty (#(#args),*) }
+					let args = args.iter().map(|a| a.generate_in(context, scope));
+					Some(quote! { (#(#args),*) })
+				};
+
+				match ty_ref {
+					chom_ir::ty::Ref::Native(n) => {
+						use chom_ir::ty::Native;
+						match n {
+							Native::Unit => quote! { () },
+							Native::String => quote! { String::new() },
+							Native::Stack => quote! { Vec::new() },
+							Native::Position => quote! { ::source_span::Position::default() },
+							_ => panic!("cannot instanciate given native type")
+						}
+					},
+					_ => {
+						let ty = ty_ref.generate(context);
+						quote! { #ty #args }
+					}
 				}
 			}
 			Self::Cons(ty_ref, v, args) => {
@@ -118,19 +150,19 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				};
 				
 				if !args.is_empty() {
-					let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
+					let args = args.iter().map(|a| a.generate_in(context, scope));
 					tokens.extend(quote! { (#(#args),*) })
 				}
 
 				tokens
 			}
-			Self::Error(err) => err.generate_in(context, scope.pure()),
+			Self::Error(err) => err.generate_in(context, scope),
 			Self::Heap(expr) => {
-				let expr = expr.generate_in(context, scope.pure());
+				let expr = expr.generate_in(context, scope);
 				quote! { Box::new(#expr) }
 			}
 			Self::If(condition, then_branch, else_branch) => {
-				let condition = condition.generate_in(context, scope.pure());
+				let condition = condition.generate_in(context, scope);
 				let then_branch = then_branch.generate_in(context, scope);
 				let else_branch = else_branch.generate_in(context, scope);
 				quote! {
@@ -138,7 +170,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Match { expr, cases } => {
-				let expr = expr.generate_in(context, scope.pure());
+				let expr = expr.generate_in(context, scope);
 				let cases = cases.iter().map(|c| c.generate_in(context, scope));
 				quote! {
 					match #expr {
@@ -147,7 +179,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::MatchRef { expr, cases } => {
-				let expr = expr.generate_in(context, scope.pure());
+				let expr = expr.generate_in(context, scope);
 				let cases = cases.iter().map(|c| c.generate_in(context, scope));
 				quote! {
 					match #expr {
@@ -157,7 +189,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 			}
 			Self::LetMatch(pattern, value, next) => {
 				let pattern = pattern.generate(context);
-				let value = value.generate_in(context, scope.pure());
+				let value = value.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 				quote! {
 					if let Some(#pattern) = #value {
@@ -168,7 +200,7 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
  				}
 			}
 			Self::Call(index, args) => {
-				let args = args.iter().map(|a| a.generate_in(context, scope.pure()));
+				let args = args.iter().map(|a| a.generate_in(context, scope));
 
 				// match object {
 				// 	Some((object, _)) => {
@@ -187,10 +219,22 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				quote! { #path ( #(#args),* ) }
 			}
 			Self::Return(args) => {
-				args.last().unwrap().generate_in(context, scope)
+				match scope.marker() {
+					Some(chom_ir::function::Marker::DebugFormat) => {
+						quote! { Ok(()) }
+					},
+					_ => {
+						let expr = args.last().unwrap().generate_in(context, scope);
+						if scope.is_in_any_loop() {
+							quote! { break #expr }
+						} else {
+							expr
+						}
+					}
+				}
 			}
 			Self::TailRecursion { body, label, .. } => {
-				let body = body.generate_in(context, scope.impure(*label));
+				let body = body.generate_in(context, scope.begin_loop(*label));
 				let label = super::label_id(context, *label);
 				quote! {
 					#label: loop {
@@ -207,14 +251,14 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Lexer(lexer, expr) => {
-				let lexer = super::var_id(context, *lexer);
+				let lexer = super::var_id(context, Some(scope), *lexer);
 				use expr::LexerExpr as Expr;
 				match expr {
 					Expr::IsEmpty => {
 						quote! { #lexer.is_empty() }
 					}
 					Expr::Peek => {
-						quote! { #lexer.peek_char()? }
+						quote! { #lexer.peek_char() }
 					},
 					Expr::Buffer => {
 						quote! { #lexer.buffer.as_str() }
@@ -231,28 +275,28 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 					},
 					Expr::Consume(next) => {
 						let next = next.generate_in(context, scope);
-						quote! { self.consume()?; #next }
+						quote! { self.consume_char()?; #next }
 					}
 				}
 			},
 			Self::Stream(stream, expr) => {
-				let stream = super::var_id(context, *stream);
+				let stream = super::var_id(context, Some(scope), *stream);
 				use expr::StreamExpr as Expr;
 				match expr {
 					Expr::Pull(dst, next) => {
-						let dst = super::var_id(context, *dst);
+						let dst = super::var_id(context, Some(scope), *dst);
 						let next = next.generate_in(context, scope);
 						quote! { let #dst = #stream.next(); #next }
 					}
 				}
 			}
 			Self::Stack(stack, expr) => {
-				let stack = super::var_id(context, *stack);
+				let stack = super::var_id(context, Some(scope), *stack);
 				use expr::StackExpr as Expr;
 				match expr {
 					Expr::Push(v, q, next) => {
-						let v = v.generate_in(context, scope.pure());
-						let q = q.generate_in(context, scope.pure());
+						let v = v.generate_in(context, scope);
+						let q = q.generate_in(context, scope);
 						let next = next.generate_in(context, scope);
 						quote! { #stack.push((#v, #q)); #next }
 					},
@@ -262,12 +306,12 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 							quote! { #stack.pop(); #next }
 						} else {
 							let v = match v {
-								Some(v) => super::var_id(context, *v),
+								Some(v) => super::var_id(context, Some(scope), *v),
 								None => quote! { _ },
 							};
 
 							let q = match q {
-								Some(q) => super::var_id(context, *q),
+								Some(q) => super::var_id(context, Some(scope), *q),
 								None => quote! { _ },
 							};
 
@@ -283,37 +327,37 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				use expr::SpanExpr as Expr;
 				match expr {
 					Expr::Locate(expr, loc) => {
-						let expr = expr.generate_in(context, scope.pure());
-						let loc = loc.generate_in(context, scope.pure());
+						let expr = expr.generate_in(context, scope);
+						let loc = loc.generate_in(context, scope);
 						quote! { ::source_span::Loc::new(#expr, #loc) }
 					}
 					Expr::FromPosition(expr) => {
-						let expr = expr.generate_in(context, scope.pure());
+						let expr = expr.generate_in(context, scope);
 						quote! { #expr . into() }
 					}
 					Expr::After(expr) => {
-						let expr = expr.generate_in(context, scope.pure());
+						let expr = expr.generate_in(context, scope);
 						quote! { #expr . end() }
 					}
 					Expr::Transpose(expr, default_span) => {
-						let expr = expr.generate_in(context, scope.pure());
-						let default_span = default_span.generate_in(context, scope.pure());
+						let expr = expr.generate_in(context, scope);
+						let default_span = default_span.generate_in(context, scope);
 						quote! {
 							::source_span::Loc::transposed(#expr, #default_span)
 						}
 					}
 					Expr::Unwrap(target_value, target_span, value, next) => {
 						let target_value = match target_value {
-							Some(id) => super::var_id(context, *id),
+							Some(id) => super::var_id(context, Some(scope), *id),
 							None => quote! { _ },
 						};
 		
 						let target_span = match target_span {
-							Some(id) => super::var_id(context, *id),
+							Some(id) => super::var_id(context, Some(scope), *id),
 							None => quote! { _ },
 						};
 		
-						let value = value.generate_in(context, scope.pure());
+						let value = value.generate_in(context, scope);
 						let next = next.generate_in(context, scope);
 						quote! {
 							let (#target_value, #target_span) = #value.into_raw_parts();
@@ -321,8 +365,8 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 						}
 					}
 					Expr::Merge(a, b) => {
-						let a = a.generate_in(context, scope.pure());
-						let b = b.generate_in(context, scope.pure());
+						let a = a.generate_in(context, scope);
+						let b = b.generate_in(context, scope);
 						quote! {
 							#a.union(#b)
 						}
@@ -330,27 +374,21 @@ impl<T: Namespace> GenerateIn<T> for Expr<T> {
 				}
 			}
 			Self::Write(output, string, next) => {
-				let output = super::var_id(context, *output);
+				let output = super::var_id(context, Some(scope), *output);
 				let next = next.generate_in(context, scope);
-				quote! { write!(#output, #string); #next }
+				quote! { write!(#output, #string)?; #next }
 			}
 			Self::Print(string, next) => {
 				let next = next.generate_in(context, scope);
 				quote! { eprintln!(#string); #next }
 			}
 			Self::DebugFormat(output, e, next) => {
-				let output = super::var_id(context, *output);
-				let value = e.generate_in(context, scope.pure());
+				let output = super::var_id(context, Some(scope), *output);
+				let value = e.generate_in(context, scope);
 				let next = next.generate_in(context, scope);
 				quote! { write!(#output, "{:?}", #value)?; #next }
 			}
 			Self::Unreachable => quote! { unreachable!() }
-		};
-
-		if scope.is_pure() || self.is_continued() {
-			expr
-		} else {
-			quote! { break #expr }
 		}
 	}
 }
@@ -375,11 +413,11 @@ impl<T: Namespace> GenerateIn<T> for expr::Error<T> {
 	) -> TokenStream {
 		match self {
 			Self::UnexpectedToken(expr) => {
-				let expr = expr.generate_in(context, scope.pure());
+				let expr = expr.generate_in(context, scope);
 				quote! { Error::UnexpectedToken(#expr) }
 			}
 			Self::UnexpectedNode(expr) => {
-				let expr = expr.generate_in(context, scope.pure());
+				let expr = expr.generate_in(context, scope);
 				quote! { Error::UnexpectedNode(#expr) }
 			}
 		}

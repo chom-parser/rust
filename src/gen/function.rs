@@ -13,7 +13,10 @@ use super::{
 };
 
 impl<T: Namespace> GenerateIn<T> for Function<T> {
-	fn generate_in(&self, context: &Context<T>, scope: Scope<T>) -> TokenStream {
+	fn generate_in(&self, context: &Context<T>, mut scope: Scope<T>) -> TokenStream {
+		scope.set_marker(self.signature().marker());
+		scope.set_this(self.this());
+		
 		let body = match self.body() {
 			Some(expr) => expr.generate_in(context, scope),
 			None => quote! { unimplemented!() }
@@ -32,9 +35,9 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 			}
 			Some(function::Marker::Lexer) => {
 				let return_ty = &self.signature().return_types()[1];
-				let result_ty = return_ty.some_type().unwrap();
-				let (_token_ty, error_ty) = result_ty.as_result_type().unwrap();
+				let (token_opt_ty, error_ty) = return_ty.as_result_type().unwrap();
 
+				let token_opt_ty = token_opt_ty.generate(context);
 				let error_ty = error_ty.generate(context);
 
 				quote! {
@@ -43,6 +46,11 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 						I: Iterator<Item = Result<char, E>>,
 						M: ::source_span::Metrics,
 					> Lexer<I, M> {
+						/// Checks if the buffer is empty.
+						fn is_empty(&self) -> bool {
+							self.buffer.is_empty()
+						}
+
 						/// Peeks the next character without consuming it.
 						fn peek_char(
 							&mut self
@@ -79,10 +87,10 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 						}
 
 						/// Parses the next token.
-						fn #id(
+						fn next_token(
 							&mut self,
 						) -> Result<
-							Option<::source_span::Loc<Token>>,
+							#token_opt_ty,
 							::source_span::Loc<#error_ty>,
 						> {
 							#body
@@ -100,13 +108,13 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 						>;
 
 						fn next(&mut self) -> Option<Self::Item> {
-							self.#id().transpose()
+							self.next_token().transpose()
 						}
 					}
 				}
 			}
 			Some(function::Marker::Parser) => {
-				let lexer = super::var_id(context, self.signature().arguments()[0].id());
+				let lexer = super::var_id(context, Some(scope), self.signature().arguments()[0].id());
 				let lexer_ty = self.signature().arguments()[0].ty();
 				let lexer_result_ty = lexer_ty.stream_item().unwrap();
 				let (token_ty, _error_ty) = lexer_result_ty.as_result_type().unwrap();
@@ -131,7 +139,17 @@ impl<T: Namespace> GenerateIn<T> for Function<T> {
 				}
 			}
 			Some(function::Marker::DebugFormat) => {
-				panic!("TODO debug format")
+				let ty = self.signature().arguments()[0].ty().referenced_type().unwrap();
+				let ty_path = ty.generate(context);
+				let output = super::var_id(context, Some(scope), self.signature().arguments()[1].id());
+
+				quote! {
+					impl std::fmt::Debug for #ty_path {
+						fn fmt(&self, #output: &mut std::fmt::Formatter) -> std::fmt::Result {
+							#body
+						}
+					}
+				}
 			}
 		}
 	}
